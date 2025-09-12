@@ -1,0 +1,67 @@
+{
+  "qualityGate": {
+    "name": "TestJava Price Service Quality Gate",
+    "conditions": [
+      {
+        "metric": "coverage",
+        "op": "LT",
+        "value": "75.0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "new_coverage",
+        "op": "LT", 
+        "value": "80.0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "duplicated_lines_density",
+        "op": "GT",
+        "value": "5.0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "new_duplicated_lines_density",
+        "op": "GT",
+        "value": "3.0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "maintainability_rating",
+        "op": "GT",
+        "value": "1",
+        "level": "ERROR"
+      },
+      {
+        "metric": "reliability_rating",
+        "op": "GT",
+        "value": "1", 
+        "level": "ERROR"
+      },
+      {
+        "metric": "security_rating",
+        "op": "GT",
+        "value": "1",
+        "level": "ERROR"
+      },
+      {
+        "metric": "new_bugs",
+        "op": "GT",
+        "value": "0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "new_vulnerabilities",
+        "op": "GT", 
+        "value": "0",
+        "level": "ERROR"
+      },
+      {
+        "metric": "new_code_smells",
+        "op": "GT",
+        "value": "5",
+        "level": "ERROR"
+      }
+    ]
+  }
+}
