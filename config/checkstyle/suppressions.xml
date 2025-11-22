@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suppressions PUBLIC
+    "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+    "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <!-- Suppress checks for generated files -->
+    <suppress files="build[\\/].*" checks=".*"/>
+    
+    <!-- Suppress checks for test files where appropriate -->
+    <suppress files=".*Test\.java" checks="MagicNumber"/>
+    <suppress files=".*Test\.java" checks="MissingJavadocMethod"/>
+    <suppress files=".*Test\.java" checks="JavadocMethod"/>
+    <suppress files=".*Test\.java" checks="MethodLength"/>
+    
+    <!-- Suppress checks for configuration classes -->
+    <suppress files=".*Configuration\.java" checks="HideUtilityClassConstructor"/>
+    
+    <!-- Suppress checks for DTOs -->
+    <suppress files=".*dto[\\/].*\.java" checks="MissingJavadocType"/>
+    <suppress files=".*dto[\\/].*\.java" checks="MissingJavadocMethod"/>
+    
+    <!-- Suppress checks for entities -->
+    <suppress files=".*entity[\\/].*\.java" checks="MissingJavadocType"/>
+    <suppress files=".*entity[\\/].*\.java" checks="MissingJavadocMethod"/>
+    
+    <!-- Suppress specific checks for main application class -->
+    <suppress files=".*Application\.java" checks="HideUtilityClassConstructor"/>
+    <suppress files=".*Application\.java" checks="MissingJavadocType"/>
+    
+    <!-- Suppress utility class checks for test factories -->
+    <suppress files=".*TestDataFactory\.java" checks="HideUtilityClassConstructor"/>
+    
+    <!-- Suppress line length for import statements -->
+    <suppress files=".*\.java" checks="LineLength" lines="1-50"/>
+</suppressions>

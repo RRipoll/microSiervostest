@@ -1,0 +1,47 @@
+// Sonar validation task
+task sonarValidation {
+    group 'verification'
+    description 'Run comprehensive SonarQube validation with quality gates'
+    
+    dependsOn 'test', 'jacocoTestReport'
+    
+    doLast {
+        println "Starting SonarQube validation..."
+        println "This will analyze code quality, coverage, security, and maintainability"
+        println ""
+        println "Quality Gates Configured:"
+        println "- Code Coverage: >= 75%"
+        println "- New Code Coverage: >= 80%" 
+        println "- Duplicated Lines: <= 5%"
+        println "- Maintainability Rating: A"
+        println "- Reliability Rating: A"
+        println "- Security Rating: A"
+        println "- New Bugs: 0"
+        println "- New Vulnerabilities: 0"
+        println "- New Code Smells: <= 5"
+        println ""
+        println "Run './gradlew sonar' to execute SonarQube analysis"
+        println "Ensure SonarQube server is running and accessible"
+    }
+}
+
+// Enhanced Sonar task with pre-validation
+afterEvaluate {
+    tasks.named('sonar') {
+        dependsOn 'sonarValidation'
+    }
+}
+
+task sonarQuick {
+    group 'verification'
+    description 'Quick SonarQube analysis without waiting for quality gate'
+    
+    dependsOn 'test', 'jacocoTestReport'
+    finalizedBy 'sonar'
+    
+    doFirst {
+        sonar.properties {
+            property "sonar.qualitygate.wait", "false"
+        }
+    }
+}

@@ -1,0 +1,244 @@
+# Reviewable-style configuration for TestJava Price Service
+# This configuration mimics Reviewable's approach to code reviews
+
+# Repository configuration
+repository:
+  name: "TestJava Price Service"
+  description: "Hexagonal Architecture Price Service with Comprehensive Code Review"
+  
+# Review workflow configuration
+review:
+  # Minimum number of reviewers required
+  min_reviewers: 2
+  
+  # Required reviewers for different file types
+  required_reviewers:
+    # Business logic requires senior review
+    "src/main/java/com/testjava/priceservice/domain/**":
+      - "@senior-developer"
+      - "@architect"
+    
+    # Infrastructure changes require DevOps review
+    "src/main/java/com/testjava/priceservice/infrastructure/**":
+      - "@devops-engineer"
+    
+    # Configuration files require security review
+    "config/**":
+      - "@security-engineer"
+    
+    # CI/CD pipeline changes
+    ".github/**":
+      - "@devops-engineer"
+      - "@senior-developer"
+    
+    # Database migrations or schema changes
+    "src/main/resources/**":
+      - "@database-admin"
+      - "@senior-developer"
+
+  # Auto-assign reviewers based on code ownership
+  auto_assign:
+    enabled: true
+    algorithm: "round_robin"
+    exclude_author: true
+    
+  # Review completion criteria
+  completion:
+    # All automated checks must pass
+    required_status_checks:
+      - "ci/unit-tests"
+      - "ci/integration-tests" 
+      - "ci/code-quality"
+      - "ci/security-scan"
+      - "ci/coverage-check"
+    
+    # All conversations must be resolved
+    require_conversation_resolution: true
+    
+    # Require approval from all requested reviewers
+    require_all_requested_reviewers: true
+    
+    # Block merge on failing checks
+    block_on_failing_checks: true
+
+# Automated checks configuration
+checks:
+  # Code quality checks
+  quality:
+    enabled: true
+    fail_on_error: true
+    tools:
+      - checkstyle
+      - pmd
+      - spotbugs
+      - sonarqube
+    
+  # Security checks
+  security:
+    enabled: true
+    fail_on_error: true
+    tools:
+      - dependency_check
+      - security_audit
+    
+  # Test coverage requirements
+  coverage:
+    enabled: true
+    min_coverage: 75
+    min_branch_coverage: 70
+    fail_below_threshold: true
+    
+  # Performance checks
+  performance:
+    enabled: true
+    max_build_time: "5m"
+    max_test_time: "3m"
+
+# Review categories and checklists
+categories:
+  # Code changes
+  code:
+    name: "Code Changes"
+    checklist:
+      - "Code follows established patterns and conventions"
+      - "Business logic is correct and complete"
+      - "Error handling is appropriate"
+      - "Code is readable and maintainable"
+      - "No code smells or anti-patterns"
+      - "Follows SOLID principles"
+      - "Proper logging and monitoring"
+    
+  # Architecture changes
+  architecture:
+    name: "Architecture & Design"
+    checklist:
+      - "Follows hexagonal architecture principles"
+      - "Proper layer separation maintained"
+      - "Dependencies point in correct direction"
+      - "No circular dependencies introduced"
+      - "Design patterns used appropriately"
+      - "API design is consistent"
+    
+  # Testing changes
+  testing:
+    name: "Testing"
+    checklist:
+      - "Adequate test coverage provided"
+      - "Tests are meaningful and not just for coverage"
+      - "Edge cases are tested"
+      - "Integration tests cover happy and sad paths"
+      - "Test data is realistic and complete"
+      - "Performance tests updated if needed"
+    
+  # Security review
+  security:
+    name: "Security"
+    checklist:
+      - "No sensitive data exposed in logs"
+      - "Input validation is comprehensive"
+      - "No hard-coded secrets or credentials"
+      - "Proper error messages (no info leakage)"
+      - "Dependencies are up-to-date and secure"
+      - "Authentication and authorization correct"
+    
+  # Documentation
+  documentation:
+    name: "Documentation"
+    checklist:
+      - "Code is self-documenting with clear naming"
+      - "Complex logic has appropriate comments"
+      - "API documentation updated if needed"
+      - "README updated for new features"
+      - "Architecture decision records created"
+
+# Notification settings
+notifications:
+  # Notify on review events
+  events:
+    - review_requested
+    - review_completed
+    - changes_requested
+    - approved
+    - merged
+    
+  # Channels for notifications
+  channels:
+    slack:
+      webhook_url: "${SLACK_WEBHOOK_URL}"
+      channel: "#code-reviews"
+      username: "ReviewBot"
+      
+    email:
+      enabled: true
+      recipients:
+        - "team-leads@company.com"
+        - "architects@company.com"
+
+# Review metrics and reporting
+metrics:
+  # Track review metrics
+  track:
+    - review_time
+    - approval_time
+    - comments_per_review
+    - review_participation
+    - defect_density
+    - rework_ratio
+    
+  # Generate reports
+  reports:
+    frequency: "weekly"
+    recipients:
+      - "engineering-managers@company.com"
+      - "quality-team@company.com"
+    
+  # Quality gates for reviews
+  quality_gates:
+    max_review_time: "2 days"
+    min_participation_rate: 80
+    max_rework_ratio: 0.2
+
+# Branch protection rules
+branch_protection:
+  # Main branch protection
+  main:
+    required_reviews: 2
+    dismiss_stale_reviews: true
+    require_code_owner_reviews: true
+    required_status_checks:
+      strict: true
+      contexts:
+        - "ci/build"
+        - "ci/test"
+        - "ci/quality-check"
+        - "ci/security-scan"
+    
+  # Development branch protection  
+  develop:
+    required_reviews: 1
+    dismiss_stale_reviews: false
+    required_status_checks:
+      strict: false
+      contexts:
+        - "ci/build"
+        - "ci/test"
+
+# Integration settings
+integrations:
+  # GitHub integration
+  github:
+    enabled: true
+    auto_merge: false
+    delete_branch_on_merge: true
+    
+  # JIRA integration
+  jira:
+    enabled: true
+    project_key: "TJP"
+    transition_on_merge: "Done"
+    
+  # Slack integration
+  slack:
+    enabled: true
+    notify_on_approval: true
+    notify_on_merge: true

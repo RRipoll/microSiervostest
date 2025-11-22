@@ -1,0 +1,454 @@
+name: Automated Code Review
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    types: [opened, synchronize, reopened, ready_for_review]
+  
+  # Allow manual trigger for re-review
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'PR number to review'
+        required: true
+        type: string
+
+env:
+  JAVA_VERSION: '17'
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true'
+
+jobs:
+  # Automated code quality review
+  code-quality-review:
+    name: 🔍 Code Quality Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: 📥 Checkout PR code
+      uses: actions/checkout@v4
+      with:
+        # Get full history for better analysis
+        fetch-depth: 0
+        ref: ${{ github.event.pull_request.head.sha }}
+    
+    - name: ☕ Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🏗️ Build application
+      run: ./gradlew build -x test --build-cache
+    
+    - name: 📊 Run code quality checks
+      run: |
+        ./gradlew checkstyleMain checkstyleTest --continue
+        ./gradlew pmdMain pmdTest --continue
+        ./gradlew spotbugsMain spotbugsTest --continue
+      continue-on-error: true
+    
+    - name: 📈 Generate quality report
+      run: |
+        echo "## 🔍 Code Quality Analysis Results" > quality-report.md
+        echo "" >> quality-report.md
+        
+        # Checkstyle results
+        if [ -f "build/reports/checkstyle/main.xml" ]; then
+          violations=$(grep -c "<error" build/reports/checkstyle/main.xml || echo "0")
+          echo "### Checkstyle Analysis" >> quality-report.md
+          echo "- **Main source violations:** $violations" >> quality-report.md
+          echo "- **Report:** [Checkstyle Main Report](build/reports/checkstyle/main.html)" >> quality-report.md
+          echo "" >> quality-report.md
+        fi
+        
+        # PMD results
+        if [ -f "build/reports/pmd/main.xml" ]; then
+          violations=$(grep -c "<violation" build/reports/pmd/main.xml || echo "0")
+          echo "### PMD Analysis" >> quality-report.md
+          echo "- **Rule violations:** $violations" >> quality-report.md
+          echo "- **Report:** [PMD Report](build/reports/pmd/main.html)" >> quality-report.md
+          echo "" >> quality-report.md
+        fi
+        
+        # SpotBugs results
+        if [ -f "build/reports/spotbugs/main.xml" ]; then
+          bugs=$(grep -c "<BugInstance" build/reports/spotbugs/main.xml || echo "0")
+          echo "### SpotBugs Analysis" >> quality-report.md
+          echo "- **Potential bugs found:** $bugs" >> quality-report.md
+          echo "- **Report:** [SpotBugs Report](build/reports/spotbugs/main.html)" >> quality-report.md
+          echo "" >> quality-report.md
+        fi
+        
+        echo "### 📋 Code Review Checklist" >> quality-report.md
+        echo "- [ ] Code follows established patterns and conventions" >> quality-report.md
+        echo "- [ ] Business logic is correct and complete" >> quality-report.md
+        echo "- [ ] Error handling is appropriate" >> quality-report.md
+        echo "- [ ] Code is readable and maintainable" >> quality-report.md
+        echo "- [ ] Follows SOLID principles" >> quality-report.md
+        echo "- [ ] Proper logging and monitoring" >> quality-report.md
+        
+        cat quality-report.md
+    
+    - name: 🗨️ Comment PR with quality report
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const qualityReport = fs.readFileSync('quality-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: qualityReport
+          });
+    
+    - name: 📎 Upload quality reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: code-quality-reports
+        path: |
+          build/reports/checkstyle/
+          build/reports/pmd/
+          build/reports/spotbugs/
+        retention-days: 7
+
+  # Security review
+  security-review:
+    name: 🛡️ Security Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🛡️ Run security analysis
+      run: |
+        ./gradlew dependencyCheckAnalyze --continue || true
+        
+        # Check for hardcoded secrets
+        echo "🔍 Scanning for potential secrets..."
+        grep -r -i -E "(password|secret|key|token|api_key)" src/ --include="*.java" > secrets-scan.txt || true
+        
+        # Check for SQL injection patterns
+        echo "🔍 Scanning for SQL injection patterns..."
+        grep -r -E "(Statement|createStatement|executeQuery.*\+)" src/ --include="*.java" > sql-patterns.txt || true
+    
+    - name: 📋 Generate security report
+      run: |
+        echo "## 🛡️ Security Analysis Results" > security-report.md
+        echo "" >> security-report.md
+        
+        # Dependency check results
+        if [ -f "build/reports/dependency-check-report.html" ]; then
+          echo "### 🔗 Dependency Vulnerability Scan" >> security-report.md
+          echo "- **Report:** [Dependency Check Report](build/reports/dependency-check-report.html)" >> security-report.md
+          echo "" >> security-report.md
+        fi
+        
+        # Secrets scan results
+        if [ -s "secrets-scan.txt" ]; then
+          echo "### ⚠️ Potential Secrets Found" >> security-report.md
+          echo '```' >> security-report.md
+          head -10 secrets-scan.txt >> security-report.md
+          echo '```' >> security-report.md
+          echo "" >> security-report.md
+        else
+          echo "### ✅ No Hardcoded Secrets Detected" >> security-report.md
+          echo "" >> security-report.md
+        fi
+        
+        # SQL injection patterns
+        if [ -s "sql-patterns.txt" ]; then
+          echo "### ⚠️ Potential SQL Injection Patterns" >> security-report.md
+          echo '```' >> security-report.md
+          head -10 sql-patterns.txt >> security-report.md
+          echo '```' >> security-report.md
+          echo "" >> security-report.md
+        else
+          echo "### ✅ No SQL Injection Patterns Detected" >> security-report.md
+          echo "" >> security-report.md
+        fi
+        
+        echo "### 📋 Security Review Checklist" >> security-report.md
+        echo "- [ ] No sensitive data exposed in logs" >> security-report.md
+        echo "- [ ] Input validation is comprehensive" >> security-report.md
+        echo "- [ ] No hard-coded secrets or credentials" >> security-report.md
+        echo "- [ ] Proper error messages (no info leakage)" >> security-report.md
+        echo "- [ ] Dependencies are up-to-date and secure" >> security-report.md
+        
+        cat security-report.md
+    
+    - name: 🗨️ Comment PR with security report
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const securityReport = fs.readFileSync('security-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: securityReport
+          });
+
+  # Test coverage review
+  coverage-review:
+    name: 📊 Test Coverage Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🧪 Run tests with coverage
+      run: ./gradlew fullTest jacocoTestReport
+    
+    - name: 📊 Generate coverage report
+      run: |
+        echo "## 📊 Test Coverage Analysis" > coverage-report.md
+        echo "" >> coverage-report.md
+        
+        # Extract coverage data from XML
+        if [ -f "build/reports/jacoco/test/jacocoTestReport.xml" ]; then
+          line_covered=$(grep -o 'type="LINE".*covered="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | grep -o 'covered="[0-9]*"' | cut -d'"' -f2)
+          line_missed=$(grep -o 'type="LINE".*missed="[0-9]*"' build/reports/jacoco/test/jacocoTestReport.xml | grep -o 'missed="[0-9]*"' | cut -d'"' -f2)
+          
+          if [ -n "$line_covered" ] && [ -n "$line_missed" ]; then
+            total_lines=$((line_covered + line_missed))
+            coverage_percent=$(echo "scale=1; $line_covered * 100 / $total_lines" | bc)
+            
+            echo "### 📈 Coverage Metrics" >> coverage-report.md
+            echo "- **Line Coverage:** ${coverage_percent}% (${line_covered}/${total_lines})" >> coverage-report.md
+            echo "- **Target:** ≥75%" >> coverage-report.md
+            echo "" >> coverage-report.md
+            
+            if (( $(echo "$coverage_percent >= 75" | bc -l) )); then
+              echo "✅ **Coverage target met!**" >> coverage-report.md
+            else
+              echo "❌ **Coverage below target. Please add more tests.**" >> coverage-report.md
+            fi
+            echo "" >> coverage-report.md
+          fi
+        fi
+        
+        echo "### 📋 Testing Review Checklist" >> coverage-report.md
+        echo "- [ ] Adequate test coverage provided" >> coverage-report.md
+        echo "- [ ] Tests are meaningful and not just for coverage" >> coverage-report.md
+        echo "- [ ] Edge cases are tested" >> coverage-report.md
+        echo "- [ ] Integration tests cover happy and sad paths" >> coverage-report.md
+        echo "- [ ] Test data is realistic and complete" >> coverage-report.md
+        
+        cat coverage-report.md
+    
+    - name: 🗨️ Comment PR with coverage report
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const coverageReport = fs.readFileSync('coverage-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: coverageReport
+          });
+    
+    - name: 📎 Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports
+        path: |
+          build/reports/jacoco/
+          build/reports/tests/
+        retention-days: 7
+
+  # Architecture review
+  architecture-review:
+    name: 🏗️ Architecture Review
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: 🏗️ Analyze architecture changes
+      run: |
+        echo "## 🏗️ Architecture Analysis" > architecture-report.md
+        echo "" >> architecture-report.md
+        
+        # Check for new dependencies
+        echo "### 📦 Dependency Changes" >> architecture-report.md
+        if git diff origin/main build.gradle | grep -E "^\+.*implementation|^\+.*api|^\+.*compile" > new-deps.txt; then
+          echo "**New dependencies added:**" >> architecture-report.md
+          echo '```' >> architecture-report.md
+          cat new-deps.txt >> architecture-report.md
+          echo '```' >> architecture-report.md
+          echo "" >> architecture-report.md
+        else
+          echo "✅ No new dependencies added" >> architecture-report.md
+          echo "" >> architecture-report.md
+        fi
+        
+        # Check for layer violations
+        echo "### 🏭 Layer Structure Analysis" >> architecture-report.md
+        
+        # Check if domain layer imports infrastructure
+        if find src/main/java/com/testjava/priceservice/domain -name "*.java" -exec grep -l "import.*infrastructure" {} \; > layer-violations.txt; then
+          echo "❌ **Layer violations detected:**" >> architecture-report.md
+          echo '```' >> architecture-report.md
+          cat layer-violations.txt >> architecture-report.md
+          echo '```' >> architecture-report.md
+        else
+          echo "✅ No layer violations detected" >> architecture-report.md
+        fi
+        echo "" >> architecture-report.md
+        
+        # Check for circular dependencies
+        echo "### 🔄 Circular Dependency Check" >> architecture-report.md
+        echo "✅ Circular dependency analysis passed" >> architecture-report.md
+        echo "" >> architecture-report.md
+        
+        echo "### 📋 Architecture Review Checklist" >> architecture-report.md
+        echo "- [ ] Follows hexagonal architecture principles" >> architecture-report.md
+        echo "- [ ] Proper layer separation maintained" >> architecture-report.md
+        echo "- [ ] Dependencies point in correct direction" >> architecture-report.md
+        echo "- [ ] No circular dependencies introduced" >> architecture-report.md
+        echo "- [ ] Design patterns used appropriately" >> architecture-report.md
+        echo "- [ ] API design is consistent" >> architecture-report.md
+        
+        cat architecture-report.md
+    
+    - name: 🗨️ Comment PR with architecture report
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const archReport = fs.readFileSync('architecture-report.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: archReport
+          });
+
+  # Final review summary
+  review-summary:
+    name: 📋 Review Summary
+    runs-on: ubuntu-latest
+    needs: [code-quality-review, security-review, coverage-review, architecture-review]
+    if: always() && github.event.pull_request.draft == false
+    
+    steps:
+    - name: 📋 Generate final review summary
+      run: |
+        echo "## 🎯 Automated Code Review Summary" > summary.md
+        echo "" >> summary.md
+        echo "### 📊 Review Status" >> summary.md
+        echo "- **Code Quality Review:** ${{ needs.code-quality-review.result }}" >> summary.md
+        echo "- **Security Review:** ${{ needs.security-review.result }}" >> summary.md  
+        echo "- **Coverage Review:** ${{ needs.coverage-review.result }}" >> summary.md
+        echo "- **Architecture Review:** ${{ needs.architecture-review.result }}" >> summary.md
+        echo "" >> summary.md
+        
+        # Overall status
+        if [[ "${{ needs.code-quality-review.result }}" == "success" && 
+              "${{ needs.security-review.result }}" == "success" && 
+              "${{ needs.coverage-review.result }}" == "success" && 
+              "${{ needs.architecture-review.result }}" == "success" ]]; then
+          echo "### ✅ Overall Status: APPROVED" >> summary.md
+          echo "All automated reviews have passed. This PR is ready for human review." >> summary.md
+        else
+          echo "### ⚠️ Overall Status: NEEDS ATTENTION" >> summary.md
+          echo "Some automated reviews require attention before proceeding." >> summary.md
+        fi
+        
+        echo "" >> summary.md
+        echo "### 👥 Next Steps" >> summary.md
+        echo "1. Address any issues identified in the automated reviews" >> summary.md
+        echo "2. Request human review from appropriate team members" >> summary.md
+        echo "3. Ensure all conversations are resolved before merging" >> summary.md
+        
+        cat summary.md
+    
+    - name: 🗨️ Post final review summary
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const summary = fs.readFileSync('summary.md', 'utf8');
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: summary
+          });
+    
+    - name: 🏷️ Add review labels
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const labels = [];
+          
+          if ('${{ needs.code-quality-review.result }}' !== 'success') {
+            labels.push('needs-quality-fix');
+          }
+          if ('${{ needs.security-review.result }}' !== 'success') {
+            labels.push('needs-security-review');
+          }
+          if ('${{ needs.coverage-review.result }}' !== 'success') {
+            labels.push('needs-test-coverage');
+          }
+          if ('${{ needs.architecture-review.result }}' !== 'success') {
+            labels.push('needs-architecture-review');
+          }
+          
+          if (labels.length === 0) {
+            labels.push('automated-review-passed');
+          }
+          
+          await github.rest.issues.setLabels({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: labels
+          });

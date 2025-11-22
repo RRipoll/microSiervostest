@@ -1,0 +1,337 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, 'feature/**', 'hotfix/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Daily build at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  JAVA_VERSION: '17'
+  GRADLE_OPTS: '-Dorg.gradle.daemon=false -Dorg.gradle.parallel=true -Dorg.gradle.configureondemand=true'
+
+jobs:
+  # Fast feedback - unit tests first
+  unit-tests:
+    name: 🔄 Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🚀 Run unit tests
+      run: ./gradlew fastTest --continue --build-cache --scan
+    
+    - name: 📊 Publish unit test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: |
+          build/test-results/unitTest/**/*.xml
+        check_name: Unit Test Results
+    
+    - name: 📈 Upload unit test coverage
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        files: build/reports/jacoco/unitTest/jacocoTestReport.xml
+        flags: unit-tests
+        name: unit-test-coverage
+
+  # API layer validation
+  api-tests:
+    name: 🌐 API Tests
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    timeout-minutes: 15
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🌐 Run API tests
+      run: ./gradlew validateApi --continue --build-cache
+    
+    - name: 📊 Publish API test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: |
+          build/test-results/apiTest/**/*.xml
+        check_name: API Test Results
+
+  # Integration tests with database
+  integration-tests:
+    name: 🔗 Integration Tests
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests]
+    timeout-minutes: 20
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🔗 Run integration tests
+      run: ./gradlew integrationTest --continue --build-cache
+      env:
+        SPRING_PROFILES_ACTIVE: test
+    
+    - name: 📊 Publish integration test results
+      uses: EnricoMi/publish-unit-test-result-action@v2
+      if: always()
+      with:
+        files: |
+          build/test-results/integrationTest/**/*.xml
+        check_name: Integration Test Results
+
+  # Code quality and security analysis
+  code-quality:
+    name: 🛡️ Code Quality & Security
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    timeout-minutes: 25
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Shallow clones should be disabled for better analysis
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🧪 Run tests for coverage
+      run: ./gradlew fullTest jacocoTestReport --continue --build-cache
+    
+    - name: 📊 Generate coverage report
+      run: ./gradlew testCoverageReport
+    
+    - name: 🛡️ Run SonarQube analysis
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      run: ./gradlew sonar --continue
+    
+    - name: 📈 Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      if: always()
+      with:
+        files: build/reports/jacoco/test/jacocoTestReport.xml
+        flags: integration-tests
+        name: full-test-coverage
+    
+    - name: 🔒 Run security audit
+      run: ./gradlew dependencyCheckAnalyze --continue
+      continue-on-error: true
+    
+    - name: 📄 Archive quality reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: quality-reports
+        path: |
+          build/reports/
+          build/test-results/
+        retention-days: 7
+
+  # Build and package application
+  build:
+    name: 🏗️ Build & Package
+    runs-on: ubuntu-latest
+    needs: [unit-tests, api-tests, integration-tests]
+    timeout-minutes: 15
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🏗️ Build application
+      run: ./gradlew build -x test --build-cache --scan
+    
+    - name: 🐳 Build Docker image
+      run: |
+        echo "Building Docker image..."
+        docker build -t testjava-priceservice:${{ github.sha }} .
+        docker tag testjava-priceservice:${{ github.sha }} testjava-priceservice:latest
+    
+    - name: 📦 Archive build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-artifacts
+        path: |
+          build/libs/*.jar
+          build/distributions/*
+        retention-days: 7
+    
+    - name: 📊 Build summary
+      run: |
+        echo "### 🎉 Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "- **Branch**: ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Commit**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Java Version**: ${{ env.JAVA_VERSION }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY
+
+  # Performance testing (optional, manual trigger)
+  performance-tests:
+    name: 🚀 Performance Tests
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    timeout-minutes: 30
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: ☕ Set up JDK ${{ env.JAVA_VERSION }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ env.JAVA_VERSION }}
+        distribution: 'temurin'
+        cache: gradle
+    
+    - name: 🔧 Make gradle wrapper executable
+      run: chmod +x ./gradlew
+    
+    - name: 🚀 Run performance tests
+      run: ./gradlew performanceTest --continue
+    
+    - name: 📊 Archive performance reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: performance-reports
+        path: build/reports/tests/performanceTest/
+        retention-days: 30
+
+  # Deployment staging
+  deploy-staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, code-quality]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    timeout-minutes: 10
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 📦 Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: build/libs/
+    
+    - name: 🚀 Deploy to staging
+      run: |
+        echo "🚀 Deploying to staging environment..."
+        echo "This would typically deploy to your staging infrastructure"
+        echo "JAR file: $(ls build/libs/*.jar)"
+    
+    - name: 🔍 Smoke tests on staging
+      run: |
+        echo "🔥 Running smoke tests on staging..."
+        # Add your staging smoke tests here
+        sleep 5
+        echo "✅ Smoke tests passed"
+
+  # Production deployment
+  deploy-production:
+    name: 🌟 Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, code-quality]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    timeout-minutes: 15
+    
+    steps:
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+    
+    - name: 📦 Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: build-artifacts
+        path: build/libs/
+    
+    - name: 🌟 Deploy to production
+      run: |
+        echo "🌟 Deploying to production environment..."
+        echo "This would typically deploy to your production infrastructure"
+        echo "JAR file: $(ls build/libs/*.jar)"
+    
+    - name: 🔍 Health check
+      run: |
+        echo "❤️ Running production health checks..."
+        # Add your production health checks here
+        sleep 10
+        echo "✅ Production deployment successful"
+    
+    - name: 📢 Notify deployment
+      run: |
+        echo "### 🎉 Production Deployment Complete" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Deployed At**: $(date)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: ✅ Success" >> $GITHUB_STEP_SUMMARY

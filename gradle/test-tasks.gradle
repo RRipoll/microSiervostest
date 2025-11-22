@@ -1,0 +1,166 @@
+// Custom test tasks for different layers
+
+// Fast feedback - unit tests only
+task fastTest {
+    group 'verification'
+    description 'Run fast unit tests for immediate feedback'
+    dependsOn 'unitTest'
+    
+    doLast {
+        println "✅ Fast unit tests completed"
+        println "Run './gradlew apiTest' for API layer tests"
+        println "Run './gradlew integrationTest' for full integration tests"
+    }
+}
+
+// API layer validation
+task validateApi {
+    group 'verification'  
+    description 'Run API layer tests to validate REST endpoints'
+    dependsOn 'apiTest'
+    
+    doLast {
+        println "✅ API layer validation completed"
+        println "All REST endpoints tested successfully"
+    }
+}
+
+// Full test suite with proper ordering
+task fullTest {
+    group 'verification'
+    description 'Run complete test suite in optimal order'
+    dependsOn 'unitTest', 'apiTest', 'integrationTest'
+    
+    // Ensure proper execution order
+    apiTest.mustRunAfter unitTest
+    integrationTest.mustRunAfter apiTest
+    
+    doLast {
+        println "✅ Complete test suite finished"
+        println "All layers tested successfully"
+    }
+}
+
+// Performance testing (disabled by default)
+task performanceTest(type: Test) {
+    group 'verification'
+    description 'Run performance and load tests (disabled by default)'
+    
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    
+    useJUnitPlatform {
+        includeTags 'performance'
+    }
+    
+    // Performance test specific configuration
+    maxParallelForks = 1
+    forkEvery = 1
+    maxHeapSize = '2g'
+    
+    testLogging {
+        events "passed", "skipped", "failed"
+        showStandardStreams = true
+        exceptionFormat = 'full'
+    }
+    
+    reports {
+        html.required = true
+        junitXml.required = true
+    }
+    
+    doFirst {
+        println "🚀 Starting performance tests..."
+        println "This may take several minutes to complete"
+    }
+    
+    doLast {
+        println "📊 Performance tests completed"
+        println "Check reports in build/reports/tests/performanceTest/"
+    }
+}
+
+// Smoke test - minimal critical path validation
+task smokeTest {
+    group 'verification'
+    description 'Run smoke tests for critical functionality validation'
+    dependsOn 'test'
+    
+    doFirst {
+        test.useJUnitPlatform {
+            includeTags 'integration'
+            includeEngines 'junit-jupiter'
+        }
+        test.include '**/integration/**'
+        test.maxParallelForks = 1
+    }
+    
+    doLast {
+        println "🔥 Smoke tests completed - critical paths validated"
+    }
+}
+
+// Test coverage report with thresholds
+task testCoverageReport {
+    group 'verification'
+    description 'Generate test coverage report with quality thresholds'
+    dependsOn 'fullTest', 'jacocoTestReport'
+    
+    doLast {
+        println "📈 Test coverage report generated"
+        println "View at: build/reports/jacoco/test/html/index.html"
+        println "XML report: build/reports/jacoco/test/jacocoTestReport.xml"
+    }
+}
+
+// CI/CD friendly task
+task ciTest {
+    group 'verification'
+    description 'CI/CD optimized test execution with proper reporting'
+    dependsOn 'fullTest', 'jacocoTestReport'
+    
+    doLast {
+        println "🤖 CI tests completed successfully"
+        
+        // Output test summary for CI systems
+        def testResults = [:]
+        fileTree(dir: 'build/test-results', include: '**/*.xml').each { file ->
+            def suite = file.parentFile.name
+            def xml = new XmlSlurper().parse(file)
+            testResults[suite] = [
+                tests: xml.@tests as Integer,
+                failures: xml.@failures as Integer,
+                errors: xml.@errors as Integer,
+                skipped: xml.@skipped as Integer,
+                time: xml.@time as Double
+            ]
+        }
+        
+        println "\n📊 Test Results Summary:"
+        testResults.each { suite, results ->
+            println "  ${suite}: ${results.tests} tests, ${results.failures} failures, ${results.errors} errors (${String.format('%.2f', results.time)}s)"
+        }
+    }
+}
+
+// Development helper - watch and test
+task testWatch {
+    group 'verification'
+    description 'Watch for changes and run fast tests automatically'
+    
+    doLast {
+        println "👁️  Test watch mode"
+        println "This would watch for file changes and run fastTest automatically"
+        println "Implementation requires file watching plugin or IDE integration"
+    }
+}
+
+// Configure default test task to run unit tests first
+test {
+    // Run unit tests by default for faster feedback
+    useJUnitPlatform {
+        excludeTags 'performance'
+    }
+    
+    finalizedBy jacocoTestReport
+}

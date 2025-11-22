@@ -1,0 +1,189 @@
+# Quality Gates Configuration for TestJava Price Service
+
+quality_gates:
+  version: "1.0"
+  project: "testjava-priceservice"
+  
+  # Code Coverage Gates
+  coverage:
+    overall_line_coverage:
+      threshold: 75
+      comparison: "greater_than_or_equal"
+      failure_action: "block_deployment"
+    
+    new_code_coverage:
+      threshold: 80
+      comparison: "greater_than_or_equal"
+      failure_action: "block_deployment"
+    
+    branch_coverage:
+      threshold: 70
+      comparison: "greater_than_or_equal"
+      failure_action: "warn"
+    
+    exclusions:
+      - "**/config/**"
+      - "**/dto/**"  
+      - "**/entity/**"
+      - "**/PriceServiceApplication.java"
+
+  # Code Quality Gates
+  code_quality:
+    maintainability_rating:
+      threshold: "A"
+      failure_action: "block_deployment"
+    
+    reliability_rating:
+      threshold: "A"
+      failure_action: "block_deployment"
+    
+    security_rating:
+      threshold: "A"
+      failure_action: "block_deployment"
+    
+    duplicated_lines_density:
+      threshold: 5.0
+      comparison: "less_than_or_equal"
+      failure_action: "block_deployment"
+    
+    code_smells:
+      threshold: 10
+      comparison: "less_than_or_equal"
+      failure_action: "warn"
+    
+    technical_debt:
+      threshold: "30min"
+      comparison: "less_than_or_equal"
+      failure_action: "warn"
+
+  # Security Gates
+  security:
+    vulnerabilities:
+      threshold: 0
+      failure_action: "block_deployment"
+    
+    security_hotspots:
+      threshold: 0
+      failure_action: "warn"
+    
+    dependency_vulnerabilities:
+      critical: 0
+      high: 0
+      medium: 5
+      failure_action: "warn"
+
+  # Test Gates
+  testing:
+    unit_test_success_rate:
+      threshold: 100
+      comparison: "equal"
+      failure_action: "block_deployment"
+    
+    api_test_success_rate:
+      threshold: 100
+      comparison: "equal"
+      failure_action: "block_deployment"
+    
+    integration_test_success_rate:
+      threshold: 100
+      comparison: "equal"
+      failure_action: "block_deployment"
+    
+    test_execution_time:
+      unit_tests_max: "10s"
+      api_tests_max: "30s"
+      integration_tests_max: "2min"
+      failure_action: "warn"
+
+  # Performance Gates
+  performance:
+    build_time:
+      threshold: "5min"
+      comparison: "less_than_or_equal"
+      failure_action: "warn"
+    
+    docker_image_size:
+      threshold: "200MB"
+      comparison: "less_than_or_equal"
+      failure_action: "warn"
+    
+    startup_time:
+      threshold: "30s"
+      comparison: "less_than_or_equal"
+      failure_action: "warn"
+
+  # Deployment Gates by Environment
+  environments:
+    staging:
+      required_gates:
+        - "coverage.overall_line_coverage"
+        - "code_quality.maintainability_rating"
+        - "code_quality.reliability_rating"
+        - "testing.unit_test_success_rate"
+        - "testing.api_test_success_rate"
+        - "testing.integration_test_success_rate"
+      
+      optional_gates:
+        - "security.dependency_vulnerabilities"
+        - "performance.build_time"
+    
+    production:
+      required_gates:
+        - "coverage.overall_line_coverage"
+        - "coverage.new_code_coverage"
+        - "code_quality.maintainability_rating"
+        - "code_quality.reliability_rating" 
+        - "code_quality.security_rating"
+        - "code_quality.duplicated_lines_density"
+        - "security.vulnerabilities"
+        - "testing.unit_test_success_rate"
+        - "testing.api_test_success_rate"
+        - "testing.integration_test_success_rate"
+      
+      optional_gates:
+        - "security.security_hotspots"
+        - "performance.docker_image_size"
+        - "performance.startup_time"
+
+  # Notification Configuration
+  notifications:
+    on_failure:
+      - type: "slack"
+        channel: "#deployments"
+        message: "Quality gate failed for {project} on {branch}"
+      
+      - type: "email"
+        recipients: ["team@testjava.com"]
+        subject: "Quality Gate Failure - {project}"
+    
+    on_success:
+      - type: "slack"
+        channel: "#deployments"
+        message: "Quality gates passed for {project} - deployment approved"
+
+  # Reporting Configuration  
+  reporting:
+    formats: ["json", "html", "junit"]
+    output_directory: "build/reports/quality-gates"
+    
+    dashboard:
+      enabled: true
+      url: "https://quality-dashboard.testjava.com"
+    
+    trends:
+      enabled: true
+      history_days: 90
+
+# Custom Rules for Specific Scenarios
+custom_rules:
+  - name: "hotfix_exception"
+    condition: "branch.startsWith('hotfix/')"
+    overrides:
+      coverage.overall_line_coverage.threshold: 60
+      code_quality.code_smells.threshold: 20
+    
+  - name: "feature_branch_relaxed"
+    condition: "branch.startsWith('feature/')"
+    overrides:
+      coverage.new_code_coverage.threshold: 70
+      security.dependency_vulnerabilities.medium: 10
